@@ -615,11 +615,24 @@ pub async fn summary_stripped<Pdu: Event>(&self, event: &Pdu) -> Vec<Raw<AnyStri
 		(&StateEventType::RoomTopic, ""),
 	];
 
-	let fetches = cells.into_iter().map(|(event_type, state_key)| {
-		self.services
-			.state_accessor
-			.room_state_get(event.room_id(), event_type, state_key)
-	});
+	// A knock is the sender's own membership: it is appended below, and the
+	// sender's prior membership (e.g. leave) must not precede it, or clients
+	// reading the first own member event see a stale membership.
+	let own_membership = *event.kind() == TimelineEventType::RoomMember
+		&& event.state_key() == Some(event.sender().as_str());
+
+	let fetches = cells
+		.into_iter()
+		.filter(|&(event_type, state_key)| {
+			!(own_membership
+				&& *event_type == StateEventType::RoomMember
+				&& state_key == event.sender().as_str())
+		})
+		.map(|(event_type, state_key)| {
+			self.services
+				.state_accessor
+				.room_state_get(event.room_id(), event_type, state_key)
+		});
 
 	join_all(fetches)
 		.await
