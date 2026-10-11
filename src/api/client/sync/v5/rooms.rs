@@ -114,6 +114,7 @@ pub(super) async fn handle_room(
 	}
 
 	let is_invite = *membership == Some(MembershipState::Invite);
+	let is_knock = *membership == Some(MembershipState::Knock);
 
 	let encrypted = services.state_accessor.is_encrypted_room(room_id);
 
@@ -190,11 +191,23 @@ pub(super) async fn handle_room(
 	);
 
 	// TODO: figure out a timestamp we can use for remote invites
-	let invite_state = is_invite.then_async(|| {
-		services
-			.state_cache
-			.invite_state(sender_user, room_id)
-			.ok()
+	// Clients built on matrix-rust-sdk recognise a knocked room only by the
+	// knocker's own membership in `invite_state`; without it they treat the
+	// room as joined. Deliver the stored knock stripped state there too.
+	let invite_state = (is_invite || is_knock).then_async(|| async move {
+		if is_knock {
+			services
+				.state_cache
+				.knock_state(sender_user, room_id)
+				.await
+				.ok()
+		} else {
+			services
+				.state_cache
+				.invite_state(sender_user, room_id)
+				.await
+				.ok()
+		}
 	});
 
 	let timeline = timeline_pdus
@@ -235,7 +248,7 @@ pub(super) async fn handle_room(
 	)
 	.await;
 
-	let previous_connection_pos = previous_connection_pos.filter(|_| !is_invite);
+	let previous_connection_pos = previous_connection_pos.filter(|_| !is_invite && !is_knock);
 	let (initial, num_live) =
 		room_timeline_metadata(roomsince, previous_connection_pos, &timeline);
 

@@ -1,0 +1,27 @@
+name: build-binary
+on:
+  push:
+    branches: [knock-invite-state]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq clang libclang-dev cmake pkg-config liburing-dev
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked -p tuwunel
+      - name: Inspect
+        run: |
+          ls -la target/release/tuwunel
+          ldd target/release/tuwunel
+          target/release/tuwunel --version
+          sha256sum target/release/tuwunel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tuwunel-linux-amd64
+          path: target/release/tuwunel
+          retention-days: 7
